@@ -1,3 +1,5 @@
-web: gunicorn app:app
+web: gunicorn namekaeruapp:app
+
+
 
 
