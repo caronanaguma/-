@@ -14,6 +14,10 @@ app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
+# 確認用（本番では削除）
+print("ACCESS_TOKEN:", LINE_CHANNEL_ACCESS_TOKEN)
+print("SECRET:", LINE_CHANNEL_SECRET)
+
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
@@ -92,3 +96,4 @@ def handle_image(event):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
