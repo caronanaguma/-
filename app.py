@@ -1,6 +1,6 @@
 import os
 import io
-import easyocr
+import pytesseract
 import numpy as np
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
@@ -14,21 +14,12 @@ app = Flask(__name__)
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
-# 確認用（本番では削除）
-print("ACCESS_TOKEN:", LINE_CHANNEL_ACCESS_TOKEN)
-print("SECRET:", LINE_CHANNEL_SECRET)
-
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# EasyOCR の初期化（日本語と英語）
-reader = easyocr.Reader(['ja', 'en'], gpu=False)
-
-
 @app.route("/")
 def hello():
-    return "VoteReader Bot is running! v2"
-
+    return "VoteReader Bot is running! v3 (Tesseract)"
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -42,7 +33,6 @@ def callback():
     
     return 'OK'
 
-
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image(event):
     """画像メッセージを受信したときの処理"""
@@ -55,18 +45,13 @@ def handle_image(event):
     image_bytes = io.BytesIO(message_content.content)
     image = Image.open(image_bytes)
     
-    # PIL Image を numpy array に変換
-    image_np = np.array(image)
-    
     # OCR で文字を読み取る
     try:
-        results = reader.readtext(image_np)
+        # Tesseract で日本語と英語を読み取る
+        text = pytesseract.image_to_string(image, lang='jpn+eng')
         
-        # 読み取った文字を抽出
-        detected_texts = []
-        for detection in results:
-            text = detection[1]
-            detected_texts.append(text)
+        # 読み取った文字を行ごとに分割
+        detected_texts = [line.strip() for line in text.split('\n') if line.strip()]
         
         # ★ ここで名前変換ルールを適用 ★
         converted_names = []
@@ -92,8 +77,6 @@ def handle_image(event):
         TextSendMessage(text=reply_text)
     )
 
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
