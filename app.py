@@ -84,18 +84,8 @@ NAME_MAP = {
     "ここみ": "ちたファンとう"
 }
 
-# 名前の順序（表の上から順）
-NAME_ORDER = [
-    "Tomoka Tachi", "田中良汰", "ようすけ", "佐藤大地", "なお", "りの", "ももこ", 
-    "櫻井佑太", "なぎさ", "なかむらゆうく", "みゆ", "えりこ", "Kazutaka", "宮内菜摘", 
-    "原田澪", "そうま", "やまりょー", "原田月読", "だいすけ", "柳川 和希", "あいり", 
-    "北條", "栁町京一", "くま", "高橋勇輝", "かな", "山本知広", "鵜飼 理央", "快", 
-    "ゆい", "赤羽佳菜", "あやな", "ひらり", "けいすけ", "だんばら", "晴南", "ともき", 
-    "ももか", "chihena", "みお", "れい", "Masataka", "シバタ", "Yui", "reika", 
-    "直起", "はな", "nishida", "Mutsuna", "時羽", "たかや", "🎩HAYATO🎹", "ねね", 
-    "セナ", "Riiko🍡", "ayumi", "美月", "こうだい", "なぎと", "おかの だいご", "かえ", 
-    "ゆきこ", "ももな", "ここみ"
-]
+# 名前の順序を定義
+NAME_ORDER = list(NAME_MAP.keys())
 
 @app.route("/")
 def hello():
@@ -119,22 +109,24 @@ def handle_image(event):
     
     message_id = event.message.id
     message_content = line_bot_api.get_message_content(message_id)
-    
     image_bytes = io.BytesIO(message_content.content)
     image = Image.open(image_bytes)
     
     try:
-        # 日本語と英語を読み取る
         text = pytesseract.image_to_string(image, lang='jpn+eng')
-        detected_names = [line.strip() for line in text.split('\n') if line.strip()]
+        detected_lines = [line.strip() for line in text.split('\n') if line.strip()]
         
-        # 見つかった名前を変換
         found_names = []
-        for detected in detected_names:
-            if detected in NAME_MAP:
-                found_names.append(detected)
+        for line in detected_lines:
+            clean_line = line.replace(' ', '').replace('　', '')
+            for name in NAME_MAP.keys():
+                clean_name = name.replace(' ', '').replace('　', '')
+                # 完全一致または部分一致で追加
+                if clean_name in clean_line or clean_line in clean_name:
+                    if name not in found_names:
+                        found_names.append(name)
+                    break
         
-        # 表の順序で並べ替え
         sorted_pairs = [(name, NAME_MAP[name]) for name in NAME_ORDER if name in found_names]
         
         if sorted_pairs:
