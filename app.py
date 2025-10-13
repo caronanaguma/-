@@ -9,16 +9,15 @@ from PIL import Image
 
 app = Flask(__name__)
 
-# 環境変数から取得
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# 名前変換表
+# 名前変換表（以前いただいた全員分）
 NAME_MAP = {
-    "Tomoka TACHI": "フ・ユランス",
+    "Tomoka TAUCHI": "フ・ユランス",
     "田中良汰": "けっこんしてないしょうどくだいおう",
     "ようすけ": "ドライブ・ダ・ヴィンチ",
     "佐藤大地": "トトロっちたいさ",
@@ -50,9 +49,9 @@ NAME_MAP = {
     "ゆい": "ピュアノ",
     "赤羽佳菜": "カントリーベリー",
     "あやな": "3時のこしあん",
-    "ひら": "ウイリアーラ",
+    "ひらり": "ウイリアーラ",
     "けいすけ": "カロン",
-    "だんばら": "みずいろクロワッサン",
+    "だんばら": "しけ　みずいろクロワッサン",
     "晴南": "フリーオレ",
     "ともき": "キリン・ゼロ",
     "ももか": "いぬやマーメイド",
@@ -81,26 +80,35 @@ NAME_MAP = {
     "かえ": "まっちゃっこ",
     "ゆきこ": "ドーナツ将軍",
     "ももな": "こうきゅうカビゴン",
-    "ここみ": "ちたファンとう"
+    "ここみ": "ちたファンとう",
+    "ひらり": "ウイリアーラ"
 }
 
-# 名前の順序を定義
-NAME_ORDER = list(NAME_MAP.keys())
+# 名前の順序
+NAME_ORDER = [
+    "Tomoka Tachi", "田中良汰", "ようすけ", "佐藤大地", "なお", "りの", "ももこ", 
+    "櫻井佑太", "なぎさ", "なかむらゆうく", "みゆ", "えりこ", "Kazutaka", "宮内菜摘", 
+    "原田澪", "そうま", "やまりょー", "原田月読", "だいすけ", "柳川 和希", "あいり", 
+    "北條", "栁町京一", "くま", "高橋勇輝", "かな", "山本知広", "鵜飼 理央", "快", 
+    "ゆい", "赤羽佳菜", "あやな", "ら", "けいすけ", "だんばら", "晴南", "ともき", 
+    "ももか", "chihena", "みお", "れい", "Masataka", "シバタ", "Yui", "reika", 
+    "直起", "はな", "nishida", "Mutsuna", "時羽", "たかや", "🎩HAYATO🎹", "ねね", 
+    "セナ", "Riiko🍡", "ayumi", "美月", "こうだい", "なぎと", "おかの だいご", "かえ", 
+    "ゆきこ", "ももな", "ここみ", "ひらり"
+]
 
 @app.route("/")
 def hello():
-    return "VoteReader Bot is running! v4 (Name Converter)"
+    return "VoteReader Bot is running! v6 (全員対応)"
 
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
     body = request.get_data(as_text=True)
-    
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
-    
     return 'OK'
 
 @handler.add(MessageEvent, message=ImageMessage)
@@ -113,20 +121,21 @@ def handle_image(event):
     image = Image.open(image_bytes)
     
     try:
+        # OCRで文字起こし
         text = pytesseract.image_to_string(image, lang='jpn+eng')
         detected_lines = [line.strip() for line in text.split('\n') if line.strip()]
         
-        found_names = []
-        for line in detected_lines:
-            clean_line = line.replace(' ', '').replace('　', '')
-            for name in NAME_MAP.keys():
-                clean_name = name.replace(' ', '').replace('　', '')
-                # 完全一致または部分一致で追加
-                if clean_name in clean_line or clean_line in clean_name:
-                    if name not in found_names:
-                        found_names.append(name)
+        found_names = set()
+        
+        for detected in detected_lines:
+            detected_clean = detected.replace(' ', '').replace('　', '')
+            for original in NAME_MAP:
+                original_clean = original.replace(' ', '').replace('　', '')
+                if original_clean in detected_clean or detected_clean in original_clean:
+                    found_names.add(original)
                     break
         
+        # 表の順序で並び替え
         sorted_pairs = [(name, NAME_MAP[name]) for name in NAME_ORDER if name in found_names]
         
         if sorted_pairs:
@@ -134,19 +143,13 @@ def handle_image(event):
             count = len(sorted_pairs)
             reply_text = f"{converted_text}({count})"
         else:
-            reply_text = "登録されている名前が見つかりませんでした。"
+            reply_text = f"登録されている名前が見つかりませんでした。\nOCR結果: {' / '.join(detected_lines) if detected_lines else 'なし'}"
     
     except Exception as e:
         reply_text = f"エラー: {str(e)}"
     
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=reply_text)
-    )
+    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_text))
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
-
-
