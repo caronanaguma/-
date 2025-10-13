@@ -50,7 +50,7 @@ NAME_MAP = {
     "ゆい": "ピュアノ",
     "赤羽佳菜": "カントリーベリー",
     "あやな": "3時のこしあん",
-    "ら": "ウイリアーラ",
+    "ひらり": "ウイリアーラ",
     "けいすけ": "カロン",
     "だんばら": "しけ　みずいろクロワッサン",
     "晴南": "フリーオレ",
@@ -84,7 +84,7 @@ NAME_MAP = {
     "ここみ": "ちたファンとう"
 }
 
-# 名前の順序を定義（表の上から順）
+# 名前の順序（表の上から順）
 NAME_ORDER = [
     "Tomoka Tachi", "田中良汰", "ようすけ", "佐藤大地", "なお", "りの", "ももこ", 
     "櫻井佑太", "なぎさ", "なかむらゆうく", "みゆ", "えりこ", "Kazutaka", "宮内菜摘", 
@@ -117,43 +117,27 @@ def callback():
 def handle_image(event):
     """画像メッセージを受信したときの処理"""
     
-    # 画像を取得
     message_id = event.message.id
     message_content = line_bot_api.get_message_content(message_id)
     
-    # バイトデータを画像に変換
     image_bytes = io.BytesIO(message_content.content)
     image = Image.open(image_bytes)
     
-    # OCR で文字を読み取る
     try:
-        # Tesseract で日本語と英語を読み取る
+        # 日本語と英語を読み取る
         text = pytesseract.image_to_string(image, lang='jpn+eng')
-        
-        # 読み取った文字を行ごとに分割（空行を除く）
         detected_names = [line.strip() for line in text.split('\n') if line.strip()]
         
-        # 変換された名前を格納
-        converted_names = []
+        # 見つかった名前を変換
         found_names = []
-        
-        # 検出された各名前を変換表でチェック
         for detected in detected_names:
-            detected_clean = detected.strip()
-            # 完全一致をチェック
-            if detected_clean in NAME_MAP:
-                found_names.append(detected_clean)
-                converted_names.append(NAME_MAP[detected_clean])
+            if detected in NAME_MAP:
+                found_names.append(detected)
         
-        # 表の順序に並び替え
-        sorted_pairs = []
-        for name in NAME_ORDER:
-            if name in found_names:
-                sorted_pairs.append((name, NAME_MAP[name]))
+        # 表の順序で並べ替え
+        sorted_pairs = [(name, NAME_MAP[name]) for name in NAME_ORDER if name in found_names]
         
-        # 結果を整形
         if sorted_pairs:
-            # 変換後の名前を・で連結
             converted_text = "・".join([pair[1] for pair in sorted_pairs])
             count = len(sorted_pairs)
             reply_text = f"{converted_text}({count})"
@@ -163,7 +147,6 @@ def handle_image(event):
     except Exception as e:
         reply_text = f"エラー: {str(e)}"
     
-    # 返信
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text=reply_text)
@@ -172,6 +155,3 @@ def handle_image(event):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
-
-
