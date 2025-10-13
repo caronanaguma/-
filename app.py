@@ -18,7 +18,7 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # 名前変換表
 NAME_MAP = {
-    "Tomoka Tachi": "フ・ユランス",
+    "Tomoka TACHI": "フ・ユランス",
     "田中良汰": "けっこんしてないしょうどくだいおう",
     "ようすけ": "ドライブ・ダ・ヴィンチ",
     "佐藤大地": "トトロっちたいさ",
@@ -147,3 +147,4 @@ def handle_image(event):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
