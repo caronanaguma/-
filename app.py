@@ -5,7 +5,7 @@ from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, ImageMessage, TextSendMessage
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 
 app = Flask(__name__)
 
@@ -16,80 +16,9 @@ LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# 名前変換表（全員分）
-NAME_MAP = {
-    "Tomoka Tachi": "フ・ユランス",
-    "田中良汰": "けっこんしてないしょうどくだいおう",
-    "ようすけ": "ドライブ・ダ・ヴィンチ",
-    "佐藤大地": "トトロっちたいさ",
-    "なお": "すいじょうき",
-    "りの": "めーめ",
-    "ももこ": "ウィンターホワイト",
-    "櫻井佑太": "いぬラッセル",
-    "なぎさ": "オレンジクッキー",
-    "なかむらゆうく": "イルカザル",
-    "みゆ": "チョコりん",
-    "えりこ": "みなみんとん",
-    "Kazutaka": "めいたんていティラノ",
-    "宮内菜摘": "ポニーツェル",
-    "原田澪": "あきしば",
-    "そうま": "トプトプス",
-    "やまりょー": "198%のにくじゃが",
-    "原田月読": "天照カウンセラー",
-    "だいすけ": "フジタリアン",
-    "柳川 和希": "アップルジャパン",
-    "あいり": "トイプーエル",
-    "北條": "米から産まれた日本うさぎ",
-    "栁町京一": "ミステリーくじら",
-    "くま": "トラッキークリーム",
-    "高橋勇輝": "Banana",
-    "かな": "はれぽぽ",
-    "山本知広": "韓国のサーモンパンチ",
-    "鵜飼 理央": "モングミン",
-    "快": "スイカうんどうかい",
-    "ゆい": "ピュアノ",
-    "赤羽佳菜": "カントリーベリー",
-    "あやな": "3時のこしあん",
-    "ひらり": "ウイリアーラ",
-    "けいすけ": "カロン",
-    "だんばら": "しけ　みずいろクロワッサン",
-    "晴南": "フリーオレ",
-    "ともき": "キリン・ゼロ",
-    "ももか": "いぬやマーメイド",
-    "chihena": "しろくまメロン",
-    "みお": "さくらのうえにも一年",
-    "れい": "ピンクのぬりかべ",
-    "Masataka": "おおたにシックス",
-    "シバタ": "ハートパキッ",
-    "Yui": "いちごルビー",
-    "reika": "パンダルム",
-    "直起": "えいこうのくつひも",
-    "はな": "プラン・A・クトン",
-    "nishida": "ホワイトはなごん",
-    "Mutsuna": "チャーリス",
-    "時羽": "ポインアップ",
-    "たかや": "オニオンクラフト",
-    "🎩HAYATO🎹": "モスプーさん",
-    "ねね": "ぱっきゃん",
-    "セナ": "仮面ライダーリカグルト",
-    "Riiko🍡": "ココルー",
-    "ayumi": "カルピスの森",
-    "美月": "パンプキンピーチ",
-    "こうだい": "くすりうりの彼女",
-    "なぎと": "ワンマグロピース",
-    "おかの だいご": "さくらえび",
-    "かえ": "まっちゃっこ",
-    "ゆきこ": "ドーナツ将軍",
-    "ももな": "こうきゅうカビゴン",
-    "ここみ": "ちたファンとう"
-}
-
-# 表の順序
-NAME_ORDER = list(NAME_MAP.keys())
-
 @app.route("/")
 def hello():
-    return "VoteReader Bot is running! v5 (全員対応・ゆるゆるOCR)"
+    return "VoteReader Bot - OCR Test Mode"
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -105,45 +34,46 @@ def callback():
 
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image(event):
-    """画像メッセージを受信したときの処理"""
+    """画像から文字を読み取ってそのまま返す"""
     
-    # 複数画像もリスト化
-    message_ids = [event.message.id]
-    
-    all_detected_lines = []
-    
-    for message_id in message_ids:
+    try:
+        # 画像を取得
+        message_id = event.message.id
         message_content = line_bot_api.get_message_content(message_id)
         image_bytes = io.BytesIO(message_content.content)
         image = Image.open(image_bytes)
         
-        try:
-            text = pytesseract.image_to_string(image, lang='jpn+eng')
-            lines = [line.strip().replace(' ','').replace('　','') for line in text.split('\n') if line.strip()]
-            all_detected_lines.extend(lines)
-        except Exception as e:
-            continue  # OCR失敗でも次へ
+        # 画像サイズを制限
+        max_size = 2000
+        if image.width > max_size or image.height > max_size:
+            ratio = min(max_size / image.width, max_size / image.height)
+            new_size = (int(image.width * ratio), int(image.height * ratio))
+            image = image.resize(new_size, Image.LANCZOS)
+        
+        # OCRで文字を読み取る（シンプル版）
+        text = pytesseract.image_to_string(image, lang='jpn+eng')
+        
+        # 読み取った文字を整形
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        
+        if lines:
+            # 番号付きで表示
+            result = "【OCR読み取り結果】\n\n"
+            for i, line in enumerate(lines, 1):
+                result += f"{i}. {line}\n"
+            result += f"\n合計 {len(lines)} 行"
+            reply_text = result
+        else:
+            reply_text = "文字を読み取れませんでした。"
     
-    found_names = set()
+    except Exception as e:
+        reply_text = f"エラー: {str(e)}"
     
-    for detected in all_detected_lines:
-        for original in NAME_MAP:
-            original_clean = original.replace(' ','').replace('　','')
-            # ゆるゆる一致
-            if original_clean in detected or detected in original_clean:
-                found_names.add(original)
-    
-    # 表の順序でソート
-    sorted_pairs = [(name, NAME_MAP[name]) for name in NAME_ORDER if name in found_names]
-    
-    if sorted_pairs:
-        converted_text = "・".join([pair[1] for pair in sorted_pairs])
-        count = len(sorted_pairs)
-        reply_text = f"{converted_text}({count})"
-    else:
-        reply_text = f"登録されている名前が見つかりませんでした。\nOCR結果: {' / '.join(all_detected_lines) if all_detected_lines else 'なし'}"
-    
-    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_text))
+    # 返信
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text=reply_text)
+    )
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
