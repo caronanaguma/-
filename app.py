@@ -1,3 +1,4 @@
+
 import os
 import io
 import pytesseract
@@ -138,7 +139,7 @@ def find_best_match(detected, threshold=0.65):
 
 @app.route("/")
 def hello():
-    return "VoteReader Bot v8 - Final"
+    return "VoteReader Bot v6 - Fuzzy Matching"
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -157,54 +158,39 @@ def handle_image(event):
     """画像から名前を読み取って変換"""
     
     try:
-        # 画像を取得
-        message_content = line_bot_api.get_message_content(event.message.id)
+        message_id = event.message.id
+        message_content = line_bot_api.get_message_content(message_id)
         image_bytes = io.BytesIO(message_content.content)
         image = Image.open(image_bytes)
         
-        # 画像サイズを制限
         max_size = 2000
         if image.width > max_size or image.height > max_size:
             ratio = min(max_size / image.width, max_size / image.height)
             new_size = (int(image.width * ratio), int(image.height * ratio))
             image = image.resize(new_size, Image.LANCZOS)
         
-        # OCR処理3種類（エラーハンドリング付き）
         all_detected = set()
         
-        # 方法1: オリジナル画像
-        try:
-            text = pytesseract.image_to_string(image, lang='jpn+eng', config='--psm 6')
-            all_detected.update([line.strip() for line in text.split('\n') if line.strip() and len(line.strip()) >= 2])
-        except:
-            pass
+        text1 = pytesseract.image_to_string(image, lang='jpn+eng', config='--psm 6')
+        all_detected.update([line.strip() for line in text1.split('\n') if line.strip() and len(line.strip()) >= 2])
         
-        # 方法2: 前処理画像
-        try:
-            processed = preprocess_image_v2(image)
-            text = pytesseract.image_to_string(processed, lang='jpn+eng', config='--psm 6')
-            all_detected.update([line.strip() for line in text.split('\n') if line.strip() and len(line.strip()) >= 2])
-        except:
-            pass
+        processed = preprocess_image_v2(image)
+        text2 = pytesseract.image_to_string(processed, lang='jpn+eng', config='--psm 6')
+        all_detected.update([line.strip() for line in text2.split('\n') if line.strip() and len(line.strip()) >= 2])
         
-        # 方法3: コントラスト強調
-        try:
-            enhanced = ImageEnhance.Contrast(image).enhance(2.0)
-            text = pytesseract.image_to_string(enhanced, lang='jpn+eng', config='--psm 6')
-            all_detected.update([line.strip() for line in text.split('\n') if line.strip() and len(line.strip()) >= 2])
-        except:
-            pass
+        enhancer = ImageEnhance.Contrast(image)
+        enhanced = enhancer.enhance(2.0)
+        text3 = pytesseract.image_to_string(enhanced, lang='jpn+eng', config='--psm 6')
+        all_detected.update([line.strip() for line in text3.split('\n') if line.strip() and len(line.strip()) >= 2])
         
-        # あいまいマッチングで名前特定
         matched_names = {}
+        
         for detected in all_detected:
             matched_name, ratio = find_best_match(detected)
             if matched_name:
-                # より高い類似度の場合のみ更新（重複排除）
                 if matched_name not in matched_names or ratio > matched_names[matched_name][1]:
                     matched_names[matched_name] = (detected, ratio)
         
-        # 表の順序でソート
         sorted_names = [name for name in NAME_ORDER if name in matched_names]
         
         if sorted_names:
@@ -214,7 +200,6 @@ def handle_image(event):
                 detected_text, ratio = matched_names[name]
                 converted_name = NAME_MAP[name]
                 
-                # 100%未満の場合のみ一致率を表示（四捨五入）
                 if ratio < 1.0:
                     converted_parts.append(f"{converted_name}({round(ratio * 100)}%)")
                 else:
@@ -222,10 +207,10 @@ def handle_image(event):
             
             converted = "・".join(converted_parts)
             count = len(sorted_names)
-            
             reply_text = f"{converted}({count})"
         else:
-            reply_text = "名前が見つかりませんでした。"
+            reply_text = f"名前が見つかりませんでした。\n\n【OCR結果】\n"
+            reply_text += "\n".join(list(all_detected)[:20])
     
     except Exception as e:
         reply_text = f"エラー: {str(e)}"
