@@ -9,7 +9,6 @@ from PIL import Image, ImageEnhance, ImageFilter
 from difflib import SequenceMatcher
 import cv2
 import numpy as np
-import time
 
 app = Flask(__name__)
 
@@ -91,135 +90,150 @@ NAME_MAP = {
 # 表の順序
 NAME_ORDER = list(NAME_MAP.keys())
 
-# --- 追加：ユーザーごとの一時データ ---
-user_temp_results = {}  # {user_id: {"names": {}, "timestamp": float}}
-
 def preprocess_image_v2(image):
+    """画像を前処理"""
     img_array = np.array(image)
+    
     if len(img_array.shape) == 3:
         gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
     else:
         gray = img_array
+    
     binary = cv2.adaptiveThreshold(
         gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
     )
+    
     denoised = cv2.medianBlur(binary, 3)
+    
     return Image.fromarray(denoised)
 
 def similarity_ratio(str1, str2):
+    """2つの文字列の類似度を計算（0.0～1.0）"""
     s1 = str1.replace(' ', '').replace('　', '').lower()
     s2 = str2.replace(' ', '').replace('　', '').lower()
     return SequenceMatcher(None, s1, s2).ratio()
 
 def find_best_match(detected, threshold=0.65):
+    """検出された文字列に最も似ている登録名を探す"""
     best_match = None
     best_ratio = 0
+    
     for name in NAME_MAP.keys():
         ratio = similarity_ratio(detected, name)
+        
         detected_clean = detected.replace(' ', '').replace('　', '')
         name_clean = name.replace(' ', '').replace('　', '')
+        
         if detected_clean in name_clean or name_clean in detected_clean:
             ratio = max(ratio, 0.8)
+        
         if ratio > best_ratio:
             best_ratio = ratio
             best_match = name
+    
     if best_ratio >= threshold:
         return best_match, best_ratio
+    
     return None, 0
 
 @app.route("/")
 def hello():
-    return "VoteReader Bot v6 - Fuzzy Matching (multi-image supported)"
+    return "VoteReader Bot v8 - Final"
 
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers['X-Line-Signature']
     body = request.get_data(as_text=True)
+    
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
+    
     return 'OK'
 
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image(event):
+    """画像から名前を読み取って変換"""
+    
     try:
-        user_id = event.source.user_id
-        now = time.time()
-
-        # 古いデータを削除（30分経過したら）
-        if user_id in user_temp_results and now - user_temp_results[user_id]["timestamp"] > 1800:
-            del user_temp_results[user_id]
-
-        # ユーザーの一時データがなければ作成
-        if user_id not in user_temp_results:
-            user_temp_results[user_id] = {"names": {}, "timestamp": now}
-
-        # 画像取得
-        message_id = event.message.id
-        message_content = line_bot_api.get_message_content(message_id)
+        # 画像を取得
+        message_content = line_bot_api.get_message_content(event.message.id)
         image_bytes = io.BytesIO(message_content.content)
         image = Image.open(image_bytes)
-
-        # サイズ制限
+        
+        # 画像サイズを制限
         max_size = 2000
         if image.width > max_size or image.height > max_size:
             ratio = min(max_size / image.width, max_size / image.height)
             new_size = (int(image.width * ratio), int(image.height * ratio))
             image = image.resize(new_size, Image.LANCZOS)
-
-        # OCR試行
+        
+        # OCR処理3種類（エラーハンドリング付き）
         all_detected = set()
-        text1 = pytesseract.image_to_string(image, lang='jpn+eng', config='--psm 6')
-        all_detected.update([l.strip() for l in text1.split('\n') if l.strip() and len(l.strip()) >= 2])
-        processed = preprocess_image_v2(image)
-        text2 = pytesseract.image_to_string(processed, lang='jpn+eng', config='--psm 6')
-        all_detected.update([l.strip() for l in text2.split('\n') if l.strip() and len(l.strip()) >= 2])
-        enhancer = ImageEnhance.Contrast(image)
-        enhanced = enhancer.enhance(2.0)
-        text3 = pytesseract.image_to_string(enhanced, lang='jpn+eng', config='--psm 6')
-        all_detected.update([l.strip() for l in text3.split('\n') if l.strip() and len(l.strip()) >= 2])
-
+        
+        # 方法1: オリジナル画像
+        try:
+            text = pytesseract.image_to_string(image, lang='jpn+eng', config='--psm 6')
+            all_detected.update([line.strip() for line in text.split('\n') if line.strip() and len(line.strip()) >= 2])
+        except:
+            pass
+        
+        # 方法2: 前処理画像
+        try:
+            processed = preprocess_image_v2(image)
+            text = pytesseract.image_to_string(processed, lang='jpn+eng', config='--psm 6')
+            all_detected.update([line.strip() for line in text.split('\n') if line.strip() and len(line.strip()) >= 2])
+        except:
+            pass
+        
+        # 方法3: コントラスト強調
+        try:
+            enhanced = ImageEnhance.Contrast(image).enhance(2.0)
+            text = pytesseract.image_to_string(enhanced, lang='jpn+eng', config='--psm 6')
+            all_detected.update([line.strip() for line in text.split('\n') if line.strip() and len(line.strip()) >= 2])
+        except:
+            pass
+        
+        # あいまいマッチングで名前特定
         matched_names = {}
         for detected in all_detected:
             matched_name, ratio = find_best_match(detected)
             if matched_name:
+                # より高い類似度の場合のみ更新（重複排除）
                 if matched_name not in matched_names or ratio > matched_names[matched_name][1]:
                     matched_names[matched_name] = (detected, ratio)
-
-        # 一時保存データに統合（重複削除＆高一致率優先）
-        for name, (detected, ratio) in matched_names.items():
-            if name not in user_temp_results[user_id]["names"] or ratio > user_temp_results[user_id]["names"][name][1]:
-                user_temp_results[user_id]["names"][name] = (detected, ratio)
-        user_temp_results[user_id]["timestamp"] = now
-
-        # すべての結果を統合して出力
-        combined = user_temp_results[user_id]["names"]
-        sorted_names = [n for n in NAME_ORDER if n in combined]
-
+        
+        # 表の順序でソート
+        sorted_names = [name for name in NAME_ORDER if name in matched_names]
+        
         if sorted_names:
-            display_names = []
-            debug_info = "\n\n【マッチング詳細】\n"
+            # 変換後の名前を・で連結（100%未満のみパーセント表示）
+            converted_parts = []
             for name in sorted_names:
-                detected_text, ratio = combined[name]
-                percent = int(round(ratio * 100))
-                converted = NAME_MAP[name]
-                if percent < 100:
-                    display_names.append(f"{converted}({percent}%)")
+                detected_text, ratio = matched_names[name]
+                converted_name = NAME_MAP[name]
+                
+                # 100%未満の場合のみ一致率を表示（四捨五入）
+                if ratio < 1.0:
+                    converted_parts.append(f"{converted_name}({round(ratio * 100)}%)")
                 else:
-                    display_names.append(converted)
-                debug_info += f"{name} ← {detected_text} ({percent}%)\n"
-
-            converted_text = "・".join(display_names)
+                    converted_parts.append(converted_name)
+            
+            converted = "・".join(converted_parts)
             count = len(sorted_names)
-            reply_text = f"{converted_text}({count}){debug_info}"
+            
+            reply_text = f"{converted}({count})"
         else:
-            reply_text = "名前が見つかりませんでした。\n\n【OCR結果】\n" + "\n".join(list(all_detected)[:20])
-
+            reply_text = "名前が見つかりませんでした。"
+    
     except Exception as e:
         reply_text = f"エラー: {str(e)}"
-
-    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_text))
+    
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text=reply_text)
+    )
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
