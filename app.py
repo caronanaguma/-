@@ -1,4 +1,3 @@
-
 import os
 import io
 import pytesseract
@@ -10,8 +9,12 @@ from PIL import Image, ImageEnhance, ImageFilter
 from difflib import SequenceMatcher
 import cv2
 import numpy as np
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
+
+# 過去1分間の検出結果を保存
+recent_detections = []  # [(timestamp, matched_names_dict), ...]
 
 # 環境変数から取得
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
@@ -22,27 +25,41 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # 名前変換表
 NAME_MAP = {
+    "Tomoka Tachi": "フ・ユランス",
+    "田中良汰": "けっこんしてないしょうどくだいおう",
     "ようすけ": "ドライブ・ダ・ヴィンチ",
+    "佐藤大地": "トトロっちたいさ",
     "なお": "すいじょうき",
     "りの": "めーめ",
     "ももこ": "ウィンターホワイト",
+    "櫻井佑太": "いぬラッセル",
     "なぎさ": "オレンジクッキー",
     "なかむらゆうく": "イルカザル",
     "みゆ": "チョコりん",
     "えりこ": "みなみんとん",
     "Kazutaka": "めいたんていティラノ",
+    "宮内菜摘": "ポニーツェル",
+    "原田澪": "あきしば",
     "そうま": "トプトプス",
     "やまりょー": "198%のにくじゃが",
+    "原田月読": "天照カウンセラー",
     "だいすけ": "フジタリアン",
+    "柳川 和希": "アップルジャパン",
     "あいり": "トイプーエル",
     "北條": "米から産まれた日本うさぎ",
+    "栁町京一": "ミステリーくじら",
     "くま": "トラッキークリーム",
+    "高橋勇輝": "Banana",
     "かな": "はれぽぽ",
+    "山本知広": "韓国のサーモンパンチ",
+    "鵜飼 理央": "モングミン",
     "快": "スイカうんどうかい",
     "ゆい": "ピュアノ",
+    "赤羽佳菜": "カントリーベリー",
     "あやな": "3時のこしあん",
     "ひらり": "ウイリアーラ",
     "けいすけ": "カロン",
+    "だんばら": "しけ　みずいろクロワッサン",
     "晴南": "フリーオレ",
     "ともき": "キリン・ゼロ",
     "ももか": "いぬやマーメイド",
@@ -179,21 +196,64 @@ def handle_image(event):
         
         sorted_names = [name for name in NAME_ORDER if name in matched_names]
         
+        # 今回の結果を保存
+        current_time = datetime.now()
         if sorted_names:
-            # 変換後の名前を・で連結（100%未満のみパーセント表示）
+            recent_detections.append((current_time, matched_names))
+        
+        # 1分以上前のデータを削除
+        one_minute_ago = current_time - timedelta(minutes=1)
+        recent_detections[:] = [(t, m) for t, m in recent_detections if t > one_minute_ago]
+        
+        # 過去1分間の統合結果を作成
+        all_merged_names = {}
+        for timestamp, names_dict in recent_detections:
+            for name, (detected_text, ratio) in names_dict.items():
+                if name not in all_merged_names or ratio > all_merged_names[name][1]:
+                    all_merged_names[name] = (detected_text, ratio)
+        
+        merged_sorted = [name for name in NAME_ORDER if name in all_merged_names]
+        
+        if sorted_names:
+            # 今回の結果
             converted_parts = []
             for name in sorted_names:
                 detected_text, ratio = matched_names[name]
                 converted_name = NAME_MAP[name]
-                
-                if ratio < 1.0:
-                    converted_parts.append(f"{converted_name}({round(ratio * 100)}%)")
-                else:
-                    converted_parts.append(converted_name)
+                converted_parts.append(converted_name)
             
-            converted = "・".join(converted_parts)
-            count = len(sorted_names)
-            reply_text = f"{converted}({count})"
+            today_result = "・".join(converted_parts)
+            today_count = len(sorted_names)
+            
+            # パーセント表示（100%未満のみ）
+            percent_info = ""
+            for name in sorted_names:
+                detected_text, ratio = matched_names[name]
+                if ratio < 1.0:
+                    percent_info += f"{NAME_MAP[name]}({round(ratio * 100)}%) "
+            
+            reply_text = f"【今回】\n{today_result}({today_count})"
+            if percent_info:
+                reply_text += f"\n{percent_info.strip()}"
+            
+            # 過去1分間の統合結果
+            if len(recent_detections) > 1:  # 2件以上ある場合のみ表示
+                merged_parts = []
+                for name in merged_sorted:
+                    merged_parts.append(NAME_MAP[name])
+                
+                merged_result = "・".join(merged_parts)
+                merged_count = len(merged_sorted)
+                
+                merged_percent = ""
+                for name in merged_sorted:
+                    ratio = all_merged_names[name][1]
+                    if ratio < 1.0:
+                        merged_percent += f"{NAME_MAP[name]}({round(ratio * 100)}%) "
+                
+                reply_text += f"\n\n【過去1分間の統合】\n{merged_result}({merged_count})"
+                if merged_percent:
+                    reply_text += f"\n{merged_percent.strip()}"
         else:
             reply_text = f"名前が見つかりませんでした。\n\n【OCR結果】\n"
             reply_text += "\n".join(list(all_detected)[:20])
@@ -209,4 +269,3 @@ def handle_image(event):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
