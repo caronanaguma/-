@@ -253,7 +253,7 @@ def handle_image(event):
                 
                 reply_text += f"\n\n【過去1分間】\n{merged_result}({merged_count})"
                 if merged_percent:
-                    reply_text += f"\n{merged_percent.strip()}"
+                    reply_text += f"\n【信頼度】\n{merged_percent.strip()}"
         else:
             reply_text = f"名前が見つかりませんでした。\n\n【OCR結果】\n"
             reply_text += "\n".join(list(all_detected)[:20])
@@ -269,4 +269,5 @@ def handle_image(event):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
 
