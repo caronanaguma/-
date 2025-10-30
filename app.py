@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
-# 過去1分間の検出結果を保存
+# 過去10分間の検出結果を保存
 recent_detections = []  # [(timestamp, matched_names_dict), ...]
 
 # 環境変数から取得
@@ -201,11 +201,11 @@ def handle_image(event):
         if sorted_names:
             recent_detections.append((current_time, matched_names))
         
-        # 1分以上前のデータを削除
-        one_minute_ago = current_time - timedelta(minutes=1)
-        recent_detections[:] = [(t, m) for t, m in recent_detections if t > one_minute_ago]
+        # 10分以上前のデータを削除
+        ten_minutes_ago = current_time - timedelta(minutes=10)
+        recent_detections[:] = [(t, m) for t, m in recent_detections if t > ten_minutes_ago]
         
-        # 過去1分間の統合結果を作成
+        # 過去10分間の統合結果を作成
         all_merged_names = {}
         for timestamp, names_dict in recent_detections:
             for name, (detected_text, ratio) in names_dict.items():
@@ -236,7 +236,7 @@ def handle_image(event):
             if percent_info:
                 reply_text += f"\n{percent_info.strip()}"
             
-            # 過去1分間の統合結果
+            # 過去10分間の統合結果
             if len(recent_detections) > 1:  # 2件以上ある場合のみ表示
                 merged_parts = []
                 for name in merged_sorted:
@@ -251,7 +251,7 @@ def handle_image(event):
                     if ratio < 1.0:
                         merged_percent += f"{NAME_MAP[name]}({round(ratio * 100)}%) "
                 
-                reply_text += f"\n\n【過去1分間】\n{merged_result}({merged_count})"
+                reply_text += f"\n\n【過去10分間】\n{merged_result}({merged_count})"
                 if merged_percent:
                     reply_text += f"\n【信頼度】\n{merged_percent.strip()}"
         else:
@@ -269,6 +269,3 @@ def handle_image(event):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
-
-
